@@ -1,0 +1,52 @@
+name: Download YouTube Playlist Links
+
+on:
+  workflow_dispatch:
+    inputs:
+      playlist_url:
+        description: 'YouTube Playlist URL'
+        required: true
+        type: string
+
+jobs:
+  yt-dlp:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Install Python 3.9 and yt-dlp
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y software-properties-common
+        sudo add-apt-repository ppa:deadsnakes/ppa
+        sudo apt-get update
+        sudo apt-get install -y python3.9 python3.9-distutils python3.9-venv
+        sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.9 1
+        python3 --version
+        pip3 install -U yt-dlp
+
+    - name: Download Playlist Data (MP4 720p, Thumbnails, Titles)
+      run: |
+        PLAYLIST_URL="${{ github.event.inputs.playlist_url }}"
+        yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]" --merge-output-format mp4 \
+          --flat-playlist --get-title --get-thumbnail -g "$PLAYLIST_URL" > video_data.txt
+
+    - name: Check if links.txt is updated
+      run: |
+        git diff video_data.txt || echo "No changes detected in video_data.txt"
+
+    - name: Force Git to Detect Changes
+      run: |
+        date >> video_data.txt  # Add timestamp to force a change
+
+    - name: Commit and Push Playlist Data
+      run: |
+        git config --global user.name "github-actions"
+        git config --global user.email "github-actions@github.com"
+        git add video_data.txt
+        git commit -m "Update playlist data" || echo "No changes to commit"
+        git push https://x-access-token:${{ secrets.GH_TOKEN }}@https://github.com/shyzemalik/YT-Video-Downloader. HEAD:main
+      env:
+        GH_TOKEN: ${{ secrets.GH_TOKEN }}
