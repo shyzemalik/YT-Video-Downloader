@@ -1,12 +1,19 @@
-name: Download YouTube Playlist
+name: Download YouTube Playlist Links
 
 on:
+  workflow_dispatch:
+    inputs:
+      playlist_url:
+        description: 'YouTube Playlist URL'
+        required: true
+        type: string
   repository_dispatch:
     types: [start-download]
 
 jobs:
   yt-dlp:
     runs-on: ubuntu-latest
+
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v3
@@ -22,17 +29,38 @@ jobs:
         python3 --version
         pip3 install -U yt-dlp
 
-    - name: Download Playlist Links
+    - name: Download Playlist Data (MP4 720p, Thumbnails, Titles)
       run: |
-        PLAYLIST_URL="${{ github.event.client_payload.playlist_url }}"
+        PLAYLIST_URL="${{ github.event.inputs.playlist_url }}"
+        yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]" --merge-output-format mp4 \
+          --flat-playlist --get-title --get-thumbnail -g "$PLAYLIST_URL" > video_data.txt
+
+    - name: Check if video_data.txt is updated
+      run: |
+        git diff video_data.txt || echo "No changes detected in video_data.txt"
+
+    - name: Force Git to Detect Changes
+      run: |
+        date >> video_data.txt  # Add timestamp to force a change
+
+    - name: Download Playlist Links (MP4 720p)
+      run: |
+        PLAYLIST_URL="${{ github.event.inputs.playlist_url }}"
         yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]" --merge-output-format mp4 -g --flat-playlist "$PLAYLIST_URL" > links.txt
 
-    - name: Commit and Push Playlist Links
+    - name: Commit and Push Playlist Data
       run: |
         git config --global user.name "github-actions"
         git config --global user.email "github-actions@github.com"
+        git add video_data.txt
+        git commit -m "Update playlist data" || echo "No changes to commit"
+        git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/shyzemalik/YT-Video-Downloader.git HEAD:main
+
+    - name: Commit and Push Playlist Links
+      run: |
         git add links.txt
         git commit -m "Update playlist links"
-        git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/shyzemalik/YT.git HEAD:main
+        git push https://x-access-token:${{ secrets.GH_TOKEN }}@github.com/shyzemalik/YT-Video-Downloader.git HEAD:main
       env:
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
